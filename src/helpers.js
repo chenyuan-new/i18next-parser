@@ -41,7 +41,7 @@ function dotPathToHash(entry, target = {}, options = {}) {
   }
 
   const defaultValue =
-    entry[`defaultValue${options.suffix}`] || entry.defaultValue || ''
+    entry[`defaultValue${options.suffix}`] || entry.defaultValue || key
 
   let newValue =
     typeof options.value === 'function'

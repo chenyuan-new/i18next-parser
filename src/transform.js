@@ -40,6 +40,8 @@ export default class i18nTransform extends Transform {
       customValueTemplate: null,
       failOnWarnings: false,
       yamlOptions: null,
+      translateLocales: ['en'],
+      translateFunc: null, // async ({key,locale,namespace,value})=>{},
     }
 
     this.options = { ...this.defaults, ...options }
@@ -146,7 +148,7 @@ export default class i18nTransform extends Transform {
     done()
   }
 
-  _flush(done) {
+  async _flush(done) {
     let maybeSortedLocales = this.options.locales
     if (this.options.resetDefaultValueLocale) {
       // ensure we process the reset locale first
@@ -325,13 +327,23 @@ export default class i18nTransform extends Transform {
           }
         }
 
+        const autoTranslateFlag =
+          typeof this.options.translateFunc === 'function' &&
+          this.options.translateLocales.includes(locale)
+
         // push files back to the stream
-        this.pushFile(namespacePath, maybeSortedNewCatalog)
+        await this.pushFile(
+          { path: namespacePath, namespace, locale, autoTranslateFlag },
+          maybeSortedNewCatalog
+        )
         if (
           this.options.createOldCatalogs &&
           (Object.keys(oldCatalog).length || existingOldCatalog)
         ) {
-          this.pushFile(namespaceOldPath, maybeSortedOldCatalog)
+          await this.pushFile(
+            { path: namespaceOldPath, namespace, locale },
+            maybeSortedOldCatalog
+          )
         }
       }
     }
@@ -395,7 +407,46 @@ export default class i18nTransform extends Transform {
     return null
   }
 
-  pushFile(path, contents) {
+  async pushFile(
+    { path, namespace, locale, autoTranslateFlag = false },
+    contents
+  ) {
+    //create a func which use getCatalog to get existing catalog in path
+    // compare the catalog with contents
+    // find the key that catalog does not have
+    const travelContents = async (old, current, keyPrefix = '') => {
+      for (const key in current) {
+        const isObjectCurrent = typeof current[key] === 'object'
+        const isObjectOld = typeof old[key] === 'object'
+        // 类型不同或者old无值 直接翻译
+        if ((!old[key] || isObjectOld) && !isObjectCurrent) {
+          current[key] = await this.translateFunc({
+            key,
+            locale,
+            namespace,
+            value: current[key],
+          })
+          // current是对象，old无值或者不是对象，遍历current
+        } else if (isObjectCurrent && !isObjectOld) {
+          await travelContents(
+            {},
+            current[key],
+            keyPrefix + key + this.options.keySeparator
+          )
+        } else {
+          await travelContents(
+            old[key],
+            current[key],
+            keyPrefix + key + this.options.keySeparator
+          )
+        }
+      }
+    }
+    const oldCatalog = this.getCatalog(path)
+    if (oldCatalog && autoTranslateFlag) {
+      await travelContents(oldCatalog, contents)
+    }
+
     let text
     if (path.endsWith('yml')) {
       text = yaml.dump(contents, {
@@ -433,6 +484,7 @@ export default class i18nTransform extends Transform {
       path,
       contents: Buffer.from(text),
     })
+    // 在这里进行file的输出
     this.push(file)
   }
 }
