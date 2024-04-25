@@ -41,6 +41,7 @@ export default class i18nTransform extends Transform {
       failOnWarnings: false,
       yamlOptions: null,
       translateLocales: ['en'],
+      minimumTime: 50,
       translateFunc: null, // async ({key,locale,namespace,value})=>{},
     }
 
@@ -411,21 +412,29 @@ export default class i18nTransform extends Transform {
     { path, namespace, locale, autoTranslateFlag = false },
     contents
   ) {
-    //create a func which use getCatalog to get existing catalog in path
-    // compare the catalog with contents
-    // find the key that catalog does not have
+    const minimumTime = this.options.minimumTime
     const travelContents = async (old, current, keyPrefix = '') => {
       for (const key in current) {
+        if (!current.hasOwnProperty(key)) continue
+
         const isObjectCurrent = typeof current[key] === 'object'
         const isObjectOld = typeof old[key] === 'object'
         // 类型不同或者old无值 直接翻译
         if ((!old[key] || isObjectOld) && !isObjectCurrent) {
-          current[key] = await this.translateFunc({
+          const start = Date.now()
+
+          current[key] = await this.options.translateFunc({
             key,
             locale,
             namespace,
             value: current[key],
           })
+          const end = Date.now()
+          if (end - start < minimumTime) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, minimumTime - (end - start))
+            )
+          }
           // current是对象，old无值或者不是对象，遍历current
         } else if (isObjectCurrent && !isObjectOld) {
           await travelContents(
@@ -433,6 +442,8 @@ export default class i18nTransform extends Transform {
             current[key],
             keyPrefix + key + this.options.keySeparator
           )
+        } else if (!isObjectCurrent && !isObjectOld) {
+          continue
         } else {
           await travelContents(
             old[key],
