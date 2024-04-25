@@ -1,7 +1,7 @@
 {
   "name": "i18next-parser-async-translate",
   "description": "Command Line tool for i18next",
-  "version": "8.13.0-rc.2",
+  "version": "8.13.0-rc.3",
   "type": "module",
   "license": "MIT",
   "author": "chen yuan",
